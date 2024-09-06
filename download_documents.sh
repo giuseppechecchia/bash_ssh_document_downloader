@@ -1,13 +1,25 @@
 #!/bin/bash
 
-# Path to the .env file
-ENV_FILE="/path/to/config/.env"
+# Get the directory of the current script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Load the .env file
-if [ -f "$ENV_FILE" ]; then
-    source "$ENV_FILE"
+# Define paths to look for the .env file
+ENV_FILE_1="$SCRIPT_DIR/../../.env"   # Two levels up
+ENV_FILE_2="$SCRIPT_DIR/.env"         # Same directory as the script
+
+# Try to load the .env file from the first path
+if [ -f "$ENV_FILE_1" ]; then
+    source "$ENV_FILE_1"
+    echo "Loaded configuration from $ENV_FILE_1"
+    
+# If not found, try the second path
+elif [ -f "$ENV_FILE_2" ]; then
+    source "$ENV_FILE_2"
+    echo "Loaded configuration from $ENV_FILE_2"
+    
+# If neither exists, print an error message and exit
 else
-    echo "Error: Configuration file .env not found at path $ENV_FILE"
+    echo "Error: Configuration file .env not found in $ENV_FILE_1 or $ENV_FILE_2"
     exit 1
 fi
 
