@@ -23,13 +23,19 @@ else
     exit 1
 fi
 
-# Build the SSH command based on the presence of the SSH key
-if [ -n "$SSH_KEY" ]; then
-    SSH_CMD="ssh -i $SSH_KEY"
-    SCP_CMD="scp -i $SSH_KEY"
+# Build the SSH command based on the presence of SSH_PWD or SSH_KEY
+if [ -n "$SSH_PWD" ] && [ -z "$SSH_KEY" ]; then
+    SSH_CMD="sshpass -p $SSH_PWD ssh"
+    SCP_CMD="sshpass -p $SSH_PWD scp"
+    echo "Using password-based authentication with sshpass"
+elif [ -n "$SSH_KEY" ] && [ -z "$SSH_PWD" ]; then
+    SSH_CMD="ssh -i \"$SSH_KEY\""
+    SCP_CMD="scp -i \"$SSH_KEY\""
+    echo "Using key-based authentication with SSH key"
 else
     SSH_CMD="ssh"
     SCP_CMD="scp"
+    echo "Using default SSH command"
 fi
 
 # Create the tracking file if it doesn't exist
@@ -37,14 +43,19 @@ if [ ! -f "$TRACK_FILE" ]; then
     touch "$TRACK_FILE"
 fi
 
+
 # Load all existing hashes into a set for fast lookups
 declare -A hash_set
 while IFS= read -r line; do
     hash_set["$line"]=1
 done < "$TRACK_FILE"
 
+
 # SSH connection and retrieving the list of files (including files in subdirectories)
 remote_files=$($SSH_CMD "$REMOTE_USER@$REMOTE_HOST" "find $REMOTE_PATH -type f \( -name '*.pdf' -o -name '*.doc' -o -name '*.docx' -o -name '*.rtf' -o -name '*.txt' \) | grep -v '/\\.'")
+
+# echo "Using SSH command: $SSH_CMD"
+# echo "Connecting to: $REMOTE_USER@$REMOTE_HOST"
 
 # Download files that haven't been downloaded yet
 while IFS= read -r file; do
@@ -55,6 +66,8 @@ while IFS= read -r file; do
     if [ -z "${hash_set[$FILE_HASH]}" ]; then
         # Download the file
         $SCP_CMD "$REMOTE_USER@$REMOTE_HOST:$file" "$LOCAL_PATH"
+        # Output the filename that is being copied
+        echo "Copied file: $file"
         
         # Add the hash to the set and the tracking file
         echo "$FILE_HASH" >> "$TRACK_FILE"
