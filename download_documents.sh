@@ -11,13 +11,9 @@ ENV_FILE_2="$SCRIPT_DIR/.env"         # Same directory as the script
 if [ -f "$ENV_FILE_1" ]; then
     source "$ENV_FILE_1"
     echo "Loaded configuration from $ENV_FILE_1"
-    
-# If not found, try the second path
 elif [ -f "$ENV_FILE_2" ]; then
     source "$ENV_FILE_2"
     echo "Loaded configuration from $ENV_FILE_2"
-    
-# If neither exists, print an error message and exit
 else
     echo "Error: Configuration file .env not found in $ENV_FILE_1 or $ENV_FILE_2"
     exit 1
@@ -43,19 +39,14 @@ if [ ! -f "$TRACK_FILE" ]; then
     touch "$TRACK_FILE"
 fi
 
-
 # Load all existing hashes into a set for fast lookups
 declare -A hash_set
 while IFS= read -r line; do
     hash_set["$line"]=1
 done < "$TRACK_FILE"
 
-
 # SSH connection and retrieving the list of files (including files in subdirectories)
 remote_files=$($SSH_CMD "$REMOTE_USER@$REMOTE_HOST" "find $REMOTE_PATH -type f \( -name '*.pdf' -o -name '*.doc' -o -name '*.docx' -o -name '*.rtf' -o -name '*.txt' \) | grep -v '/\\.'")
-
-# echo "Using SSH command: $SSH_CMD"
-# echo "Connecting to: $REMOTE_USER@$REMOTE_HOST"
 
 # Download files that haven't been downloaded yet
 while IFS= read -r file; do
@@ -64,14 +55,34 @@ while IFS= read -r file; do
     
     # Check if the file hash is already in the set
     if [ -z "${hash_set[$FILE_HASH]}" ]; then
-        # Download the file
-        $SCP_CMD "$REMOTE_USER@$REMOTE_HOST:$file" "$LOCAL_PATH"
-        # Output the filename that is being copied
-        echo "Copied file: $file"
+        # Download the file with a .part extension
+        TEMP_FILE="$LOCAL_PATH/$(basename "$file").part"
+        FINAL_FILE="$LOCAL_PATH/$(basename "$file")"
         
-        # Add the hash to the set and the tracking file
-        echo "$FILE_HASH" >> "$TRACK_FILE"
-        hash_set["$FILE_HASH"]=1
+        # Download to a temporary file
+        $SCP_CMD "$REMOTE_USER@$REMOTE_HOST:$file" "$TEMP_FILE"
+        
+        # Ensure the file was downloaded successfully before renaming
+        if [ $? -eq 0 ]; then
+            echo "Starting to rename file from .part to final version..."
+            mv "$TEMP_FILE" "$FINAL_FILE"
+            
+            # Sync the filesystem to force the write to disk
+            sync
+            
+            if [ $? -eq 0 ]; then
+                echo "Renaming succeeded: $FINAL_FILE"
+                
+                # Add the hash to the set and the tracking file
+                echo "$FILE_HASH" >> "$TRACK_FILE"
+                hash_set["$FILE_HASH"]=1
+            else
+                echo "Renaming failed"
+            fi
+        else
+            echo "Failed to download $file"
+            rm -f "$TEMP_FILE"  # Remove the incomplete file if the download fails
+        fi
     fi
 done <<< "$remote_files"
 
